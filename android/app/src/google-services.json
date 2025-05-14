@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "242226670524",
+    "project_id": "rastreador-4880c",
+    "storage_bucket": "rastreador-4880c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:242226670524:android:fd19893a02f975564419b9",
+        "android_client_info": {
+          "package_name": "com.example.trabalho_rastreador"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAjHjs4Rah4JcK9vqtPns6GadU36fN_Dts"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
