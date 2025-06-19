@@ -4,7 +4,6 @@ class PatientModel {
   final int? id;
   final String name;
   final String date;
-  final String address;
   final List<GeoPoint> area;
   String? code;
   String? status;
@@ -17,7 +16,6 @@ class PatientModel {
     this.code,
     required this.name,
     required this.date,
-    required this.address,
     required this.area,
   });
 
@@ -25,7 +23,6 @@ class PatientModel {
     return {
       "name": name,
       "age": date,
-      "address": address,
       "area": area,
       "code": code,
       "userId": userId,

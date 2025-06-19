@@ -15,7 +15,9 @@ class LoginPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+
     final user = FirebaseAuth.instance.currentUser;
+    
     emailController.text = "b@b.com";
     passwordController.text = "abc123";
 

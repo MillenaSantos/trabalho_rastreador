@@ -15,7 +15,9 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   BitmapDescriptor markerIcon = BitmapDescriptor.defaultMarker;
+
   LatLng initialCamera = LatLng(-23.550520, -46.633308);
+
   //lista de coordenadas
   List<LatLng> area = [];
   GoogleMapController? mapController;
@@ -55,7 +57,9 @@ class _MapScreenState extends State<MapScreen> {
       });
     }
     //vai atualizar o mapa com a localização correta
+
     mapController?.animateCamera(CameraUpdate.newLatLng(initialCamera));
+    
   }
 
   Future<void> _searchAddress() async {
@@ -70,9 +74,7 @@ class _MapScreenState extends State<MapScreen> {
 
         //move o mapa pra coordenada encontrada
         mapController?.animateCamera(
-          CameraUpdate.newLatLng(
-            LatLng(location.latitude, location.longitude),
-          ),
+          CameraUpdate.newLatLng(LatLng(location.latitude, location.longitude)),
         );
       } else {
         ToastMessage().warning(message: 'Endereço não encontrado');
@@ -84,111 +86,105 @@ class _MapScreenState extends State<MapScreen> {
 
   void _onMapTap(LatLng location) {
     setState(() {
-      //quando toca no mapa adiciona a coordenada na lista
-      area.add(location);
+      if (area.length < 2) {
+        area.add(location);
+      } else {
+        ToastMessage().warning(message: 'Você só pode selecionar dois pontos.');
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    List<Marker> markers = area.map(
-      (location) {
-        var index = area.indexOf(location);
-        //vai criar um marcador pra cada area da lista
-        return Marker(
-          markerId: MarkerId('area-$index'),
-          position: LatLng(location.latitude, location.longitude),
-          draggable: true,
-          //vai atualizar a posição do marcador
-          onDragEnd: (location) {
-            setState(() {
-              area.replaceRange(index, index + 1, [location]);
-            });
-          },
-          //tocar no marcador remove ele
-          onTap: () {
-            setState(() {
-              area.removeAt(index);
-            });
-          },
-          icon: markerIcon,
-        );
-      },
-    ).toList();
+    List<Marker> markers =
+        area.map((location) {
+          var index = area.indexOf(location);
+          //vai criar um marcador pra cada area da lista
+          return Marker(
+            markerId: MarkerId('area-$index'),
+            position: LatLng(location.latitude, location.longitude),
+            draggable: true,
+            //vai atualizar a posição do marcador
+            onDragEnd: (location) {
+              setState(() {
+                area.replaceRange(index, index + 1, [location]);
+              });
+            },
+            //tocar no marcador remove ele
+            onTap: () {
+              setState(() {
+                area.removeAt(index);
+              });
+            },
+            icon: markerIcon,
+          );
+        }).toList();
 
     return Scaffold(
-            body: Column(
+      body: Column(
+        children: [
+          Expanded(
+            child: GoogleMap(
+              //detectar toques no mapa
+              onTap: _onMapTap,
+              //salva o controlador do mapa em mapController
+              onMapCreated: (GoogleMapController controller) {
+                mapController = controller;
+              },
+              initialCameraPosition: CameraPosition(
+                target: initialCamera,
+                zoom: 14,
+              ),
+              markers: Set<Marker>.of(markers),
+              circles:
+                  area.length == 2
+                      ? {
+                        Circle(
+                          circleId: CircleId('circle-area'),
+                          center: area[0],
+                          radius: Geolocator.distanceBetween(
+                            area[0].latitude,
+                            area[0].longitude,
+                            area[1].latitude,
+                            area[1].longitude,
+                          ),
+                          strokeColor: Colors.blue.shade600,
+                          fillColor: Colors.blue.shade200.withOpacity(0.2),
+                          strokeWidth: 2,
+                        ),
+                      }
+                      : {},
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: 20, horizontal: 25),
+            child: Column(
               children: [
-                Expanded(
-                  child: GoogleMap(
-                    //detectar toques no mapa
-                    onTap: _onMapTap,
-                    //salva o controlador do mapa em mapController
-                    onMapCreated: (GoogleMapController controller) {
-                      mapController = controller;
-                    },
-                    initialCameraPosition:
-                        CameraPosition(target: initialCamera, zoom: 14),
-                    markers: Set<Marker>.of(markers),
-                    polygons: area.length > 2
-                        ? {
-                            Polygon(
-                              polygonId: PolygonId('area'),
-                              points: area,
-                              fillColor: Colors.blue.shade200.withOpacity(0.2),
-                              strokeColor: Colors.blue.shade600,
-                              strokeWidth: 2,
-                            )
-                          }
-                        : {},
-                    circles: area.length == 2
-                        ? {
-                            Circle(
-                              circleId: CircleId('circle-area'),
-                              center: area[0],
-                              radius: Geolocator.distanceBetween(
-                                area[0].latitude,
-                                area[0].longitude,
-                                area[1].latitude,
-                                area[1].longitude,
-                              ),
-                              strokeColor: Colors.blue.shade600,
-                              fillColor: Colors.blue.shade200.withOpacity(0.2),
-                              strokeWidth: 2,
-                            )
-                          }
-                        : {},
-                  ),
+                MyTextField(
+                  controller: locationAddressController,
+                  hintText: 'Endereço',
+                  obscureText: false,
+                  required: false,
                 ),
-                Padding(
-                  padding: EdgeInsets.symmetric(vertical: 20, horizontal: 25),
-                  child: Column(
-                    children: [
-                      MyTextField(
-                        controller: locationAddressController,
-                        hintText: 'Endereço',
-                        obscureText: false,
-                        required: false,
-                      ),
-                      const SizedBox(height: 15),
-                      MyButton(
-                        onTap: _searchAddress,
-                        text: 'Buscar endereço',
-                        color: Colors.black,
-                      ),
-                      const SizedBox(height: 10),
-                      MyButton(
-                        onTap: () {
-                          Navigator.pop(context, area);
-                        },
-                        text: 'Confirmar área',
-                        color: Colors.deepPurple.shade600,
-                      ),
-                    ],
-                  ),
+                const SizedBox(height: 15),
+                MyButton(
+                  onTap: _searchAddress,
+                  text: 'Buscar endereço',
+                  color: Colors.black,
+                ),
+                const SizedBox(height: 10),
+                MyButton(
+                  onTap: () {
+                    Navigator.pop(context, area);
+                  },
+                  text: 'Confirmar área',
+                  color: Colors.deepPurple.shade600,
                 ),
               ],
             ),
-          );
+          ),
+        ],
+      ),
+    );
   }
 }

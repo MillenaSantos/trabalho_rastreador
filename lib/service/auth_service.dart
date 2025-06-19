@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:trabalho_rastreador/models/user_model.dart';
-import 'package:trabalho_rastreador/service/notification_service.dart';
 
 class AuthService {
   Future<void> signUp(UserModel user) async {
@@ -43,7 +43,7 @@ class AuthService {
         message = "A senha é fraca de mais. tente outra por favor!";
       } else if (e.code == 'email-already-in-use') {
         message = "Já existe uma conta com esse email";
-      }else if (e.code == 'invalid-email') {
+      } else if (e.code == 'invalid-email') {
         message = "Formato do email está incorreto";
       }
       throw ErrorDescription(message);
@@ -58,13 +58,14 @@ class AuthService {
   }) async {
     try {
       // Tentar fazer o login com e-mail e senha
+      print("ENTREI");
       UserCredential userCredentials = await FirebaseAuth.instance
           .signInWithEmailAndPassword(email: email, password: password);
-
+      final FirebaseMessaging notificationAPI = FirebaseMessaging.instance;
       // Obter o token de notificação
-      String? notificationToken =
-          await NotificationService().getNotificationAPI().getToken();
+      String? notificationToken = await notificationAPI.getToken();
 
+      print(notificationToken);
       // Se o token de notificação existir, salvar no Firestore
       if (notificationToken != null) {
         await FirebaseFirestore.instance
@@ -75,7 +76,7 @@ class AuthService {
               "notification_token": notificationToken,
             });
       }
-
+      print(userCredentials);
       // Retornar as credenciais do usuário
       return userCredentials;
     } on FirebaseAuthException catch (e) {

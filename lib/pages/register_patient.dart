@@ -19,8 +19,6 @@ class RegisterPatientPage extends StatefulWidget {
 class _RegisterPatientPageState extends State<RegisterPatientPage> {
   final TextEditingController patientNameController = TextEditingController();
   final TextEditingController patientDateController = TextEditingController();
-  final TextEditingController patientAddressController =
-      TextEditingController();
 
   List<LatLng> selectedArea = [];
 
@@ -77,12 +75,7 @@ class _RegisterPatientPageState extends State<RegisterPatientPage> {
                 required: true,
               ),
               const SizedBox(height: 10),
-              MyTextField(
-                controller: patientAddressController,
-                hintText: 'Endereço',
-                obscureText: false,
-                required: true,
-              ),
+     
               const SizedBox(height: 15),
 
               if (selectedArea.isNotEmpty)
@@ -106,7 +99,6 @@ class _RegisterPatientPageState extends State<RegisterPatientPage> {
                 onTap: () async {
                   final patient = PatientModel(
                     name: patientNameController.text,
-                    address: patientAddressController.text,
                     date: patientDateController.text,
                     area:
                         selectedArea
