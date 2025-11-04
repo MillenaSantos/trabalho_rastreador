@@ -1,13 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:trabalho_rastreador/pages/login.dart';
-import 'package:trabalho_rastreador/pages/patient_maps.dart';
+import 'package:trabalho_rastreador/pages/maps.dart';
 import 'package:trabalho_rastreador/pages/register_patient.dart';
 import 'package:trabalho_rastreador/service/auth_service.dart';
 import 'package:trabalho_rastreador/service/patient_service.dart';
 import 'package:trabalho_rastreador/utils/toastMessages.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -18,7 +18,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final User? userCredential = FirebaseAuth.instance.currentUser;
-
   final PatientService _pacienteService = PatientService();
   String? userId;
 
@@ -44,6 +43,26 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  IconData _getSpeedIcon(double speed) {
+    if (speed < 7) {
+      return Icons.directions_walk; // andando
+    } else if (speed < 20) {
+      return Icons.pedal_bike; // bicicleta
+    } else {
+      return Icons.directions_car; // carro
+    }
+  }
+
+  Color _getSpeedColor(double speed) {
+    if (speed < 7) {
+      return Colors.green; // devagar, tranquilo
+    } else if (speed < 20) {
+      return Colors.orange; // média, bicicleta ou corrida
+    } else {
+      return Colors.red; // rápido, veículo
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (userCredential == null) {
@@ -63,12 +82,13 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
+        backgroundColor: const Color.fromARGB(255, 223, 223, 223),
+        title: const Text('Monitorados'),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
               bool loggedOut = await AuthService().logout();
-
               if (loggedOut) {
                 Navigator.pushReplacement(
                   context,
@@ -86,14 +106,14 @@ class _HomePageState extends State<HomePage> {
       ),
       body: SafeArea(
         child: StreamBuilder(
-          stream: _pacienteService.getPatients(userId),
+          stream: _pacienteService.getPatients(userId!),
           builder: (context, AsyncSnapshot<QuerySnapshot> snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             } else if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
               return const Center(
                 child: Text(
-                  'Não há pacientes cadastrados',
+                  'Não há monitorados cadastrados',
                   style: TextStyle(fontSize: 18),
                 ),
               );
@@ -106,125 +126,183 @@ class _HomePageState extends State<HomePage> {
               itemCount: patients.length,
               itemBuilder: (context, index) {
                 final paciente = patients[index].data() as Map<String, dynamic>;
-                print(paciente);
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: GestureDetector(
-                    onTap: () async {
-                      final String? codigoPaciente = paciente['code'];
-                      if (codigoPaciente != null) {
-                        final area = await _pacienteService
-                            .buscarAreaDoPaciente(codigoPaciente);
-                        final location = await _pacienteService
-                            .getLocationFromRealtime(codigoPaciente);
+                final codePaciente = paciente['code']?.toString();
 
-                        if (area != null &&
-                            area.containsKey('center') &&
-                            area.containsKey('edge')) {
-                          final LatLng areaCenter = area['center'] as LatLng;
-                          final double areaEdge = area['edge'] as double;
+                return StreamBuilder<Map<String, dynamic>?>(
+                  stream:
+                      codePaciente != null
+                          ? _pacienteService.getRealtimeData(codePaciente)
+                          : const Stream.empty(),
+                  builder: (context, realtimeSnap) {
+                    final status = paciente['status'] ?? 'indefinido';
+                    final battery = realtimeSnap.data?['battery'] ?? 0;
+                    final avgSpeed =
+                        (realtimeSnap.data?['speed'] ?? 0).toDouble();
 
-                          if (location != null &&
-                              location.containsKey('latitude') &&
-                              location.containsKey('longitude')) {
-                            final LatLng currentLocation = LatLng(
-                              location['latitude'],
-                              location['longitude'],
-                            );
-
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        InkWell(
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(12),
+                            topRight: Radius.circular(12),
+                          ),
+                          onTap: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder:
-                                    (context) => PatientMap(
-                                      areaCenter: areaCenter,
-                                      areaEdge: areaEdge,
-                                      currentLocation: currentLocation,
+                                    (context) => RegisterPatientPage(
+                                      docId: patients[index].id,
                                     ),
                               ),
                             );
-                          } else {
-                            ToastMessage().error(
-                              message: 'Localização atual não encontrada.',
-                            );
-                          }
-                        } else {
-                          ToastMessage().error(
-                            message: 'Área do paciente não encontrada.',
-                          );
-                        }
-                      } else {
-                        ToastMessage().error(
-                          message: 'Código do paciente não disponível.',
-                        );
-                      }
-                    },
-
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.5),
-                            spreadRadius: 2,
-                            blurRadius: 5,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 16,
-                                    height: 16,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: _getStatusColor(
-                                        paciente.containsKey('status')
-                                            ? paciente['status']
-                                            : 'indefinido',
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(12),
+                                topRight: Radius.circular(12),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.grey.withOpacity(0.5),
+                                  spreadRadius: 2,
+                                  blurRadius: 5,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 16,
+                                      height: 16,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: _getStatusColor(status),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    paciente['name'] ?? '',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        paciente['name'] ?? '',
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.delete,
-                                  color: Colors.red,
+                                    const SizedBox(width: 16),
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.battery_full,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text('$battery%'),
+                                      ],
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          _getSpeedIcon(avgSpeed),
+                                          size: 18,
+                                          color: _getSpeedColor(avgSpeed),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text('${avgSpeed.round()} km/h'),
+                                      ],
+                                    ),
+                                  ],
                                 ),
-                                tooltip: 'Deletar paciente',
-                                onPressed: () async {
-                                  final docId = patients[index].id;
-                                  await _pacienteService.deletePatient(docId);
-                                },
-                              ),
-                            ],
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Data de nascimento: ${paciente['age'] ?? ''}',
+                                ),
+                                Text(
+                                  'Código do monitorado: ${paciente['code'] ?? ''}',
+                                ),
+                              ],
+                            ),
                           ),
+                        ),
+                        if (paciente['area'] != null &&
+                            (paciente['area'] as List).isNotEmpty)
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color.fromARGB(
+                                255,
+                                38,
+                                166,
+                                154,
+                              ),
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: BorderRadius.only(
+                                  bottomLeft: Radius.circular(12),
+                                  bottomRight: Radius.circular(12),
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                            ),
+                            icon: const Icon(
+                              Icons.location_on,
+                              color: Colors.white,
+                            ),
+                            label: const Text(
+                              "Ver localização atual",
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            onPressed: () async {
+                              List<LatLng> area =
+                                  (paciente['area'] as List)
+                                      .map(
+                                        (p) => LatLng(
+                                          (p as GeoPoint).latitude,
+                                          p.longitude,
+                                        ),
+                                      )
+                                      .toList();
 
-                          const SizedBox(height: 10),
-                          Text('Data de nascimento: ${paciente['age'] ?? ''}'),
-                          Text('Código do paciente: ${paciente['code'] ?? ''}'),
-                        ],
-                      ),
-                    ),
-                  ),
+                              LatLng? currentLocation;
+                              if (codePaciente != null &&
+                                  codePaciente.isNotEmpty) {
+                                final locationData = await _pacienteService
+                                    .getLocationFromRealtime(codePaciente);
+                                if (locationData != null) {
+                                  currentLocation = LatLng(
+                                    (locationData['latitude'] as num)
+                                        .toDouble(),
+                                    (locationData['longitude'] as num)
+                                        .toDouble(),
+                                  );
+                                }
+                              }
+
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (context) => MapScreen(
+                                        initialArea: area,
+                                        currentLocation: currentLocation,
+                                        readonly: true,
+                                      ),
+                                ),
+                              );
+                            },
+                          ),
+                        const SizedBox(height: 12),
+                      ],
+                    );
+                  },
                 );
               },
             );
@@ -238,9 +316,9 @@ class _HomePageState extends State<HomePage> {
             MaterialPageRoute(builder: (context) => RegisterPatientPage()),
           );
         },
-        backgroundColor: Colors.blue.shade100,
-        tooltip: 'Adicionar Paciente',
-        child: Icon(Icons.add, color: Colors.blue.shade800),
+        backgroundColor: const Color.fromARGB(255, 38, 166, 154),
+        tooltip: 'Adicionar Monitorado',
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }

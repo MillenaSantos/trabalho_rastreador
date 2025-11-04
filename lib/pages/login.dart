@@ -7,135 +7,129 @@ import 'package:trabalho_rastreador/pages/register.dart';
 import 'package:trabalho_rastreador/service/auth_service.dart';
 import 'package:trabalho_rastreador/utils/toastMessages.dart';
 
-class LoginPage extends StatelessWidget {
-  LoginPage({super.key});
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
 
-  final emailController = TextEditingController();
-  final passwordController = TextEditingController();
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final emailController = TextEditingController(text: "teste@tes.com");
+  final passwordController = TextEditingController(text: "abc123");
+  final Color mainColor = const Color(0xFF26A69A); // verde principal
+  final Color backgroundColor = const Color(0xFFE0F2F1); // verde suave
+
+  bool isLoading = false;
+
+  void signIn() async {
+    setState(() => isLoading = true);
+    try {
+      await AuthService().signIn(
+        email: emailController.text,
+        password: passwordController.text,
+      );
+      // StreamBuilder vai detectar mudança de login e navegar
+    } catch (error) {
+      ToastMessage().error(message: error.toString());
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-
-    final user = FirebaseAuth.instance.currentUser;
-    
-    emailController.text = "b@b.com";
-    passwordController.text = "abc123";
-
-    if (user != null) {
-      //se não esperar a tela carregar antes de redirecionar pode dar erro
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => HomePage()),
-          (route) => false,
-        );
-      });
-      return const SizedBox.shrink();
-    }
-
-    void singIn() async {
-      try {
-        await FirebaseAuth.instance.signOut();
-
-        await AuthService().signIn(
-          email: emailController.text,
-          password: passwordController.text,
-        );
-
-        await Future.delayed(const Duration(seconds: 1));
-
-        if (context.mounted) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => HomePage()),
-            ModalRoute.withName('/home'),
-          );
-        }
-      } catch (error) {
-        ToastMessage().success(message: error.toString());
-      }
-    }
-
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Center(
-            child: Column(
-              children: [
-                const SizedBox(height: 50),
-                const Icon(Icons.lock, size: 100),
-                const SizedBox(height: 50),
-                Text(
-                  'Bem vindo de volta!',
-                  style: TextStyle(color: Colors.grey.shade700, fontSize: 16),
-                ),
-                const SizedBox(height: 25),
-                Padding(
+        child: StreamBuilder<User?>(
+          stream: FirebaseAuth.instance.authStateChanges(),
+          builder: (context, snapshot) {
+            // Usuário logado → Home
+            if (snapshot.connectionState == ConnectionState.active &&
+                snapshot.data != null) {
+              // Navega para HomePage removendo todas as rotas
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const HomePage()),
+                  (route) => false,
+                );
+              });
+              return const SizedBox.shrink();
+            }
+
+            // Tela de login
+            return SingleChildScrollView(
+              child: Center(
+                child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 25.0),
-                  child: MyTextField(
-                    controller: emailController,
-                    hintText: 'Email',
-                    obscureText: false,
-                    required: false,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 25.0),
-                  child: MyTextField(
-                    controller: passwordController,
-                    hintText: 'Senha',
-                    obscureText: true,
-                    required: false,
-                  ),
-                ),
-                const SizedBox(height: 25),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 25),
-                  child: MyButton(
-                    onTap: singIn,
-                    text: 'Entrar',
-                    color: Colors.black,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text("Não possui conta?"),
-                    const SizedBox(width: 4),
-                    Container(
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            color: Colors.blue.shade400,
-                            width: 1,
-                          ),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 50),
+                      Icon(Icons.lock, size: 100, color: mainColor),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Bem vindo de volta!',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 16,
                         ),
                       ),
-                      child: GestureDetector(
-                        onTap:
-                            () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => RegisterPage(),
+                      const SizedBox(height: 25),
+                      MyTextField(
+                        controller: emailController,
+                        hintText: 'Email',
+                        obscureText: false,
+                        required: true,
+                      ),
+                      const SizedBox(height: 10),
+                      MyTextField(
+                        controller: passwordController,
+                        hintText: 'Senha',
+                        obscureText: true,
+                        required: true,
+                      ),
+                      const SizedBox(height: 25),
+                      isLoading
+                          ? const CircularProgressIndicator()
+                          : MyButton(
+                            onTap: signIn,
+                            text: 'Entrar',
+                            color: mainColor,
+                          ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text("Não possui conta?"),
+                          const SizedBox(width: 4),
+                          GestureDetector(
+                            onTap:
+                                () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => RegisterPage(),
+                                  ),
+                                ),
+                            child: Text(
+                              'Registre-se',
+                              style: TextStyle(
+                                color: mainColor,
+                                fontWeight: FontWeight.bold,
+                                decoration: TextDecoration.underline,
                               ),
                             ),
-                        child: Text(
-                          'Registre-se',
-                          style: TextStyle(
-                            color: Colors.blue.shade400,
-                            fontWeight: FontWeight.bold,
                           ),
-                        ),
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 50),
+                    ],
+                  ),
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ),
     );

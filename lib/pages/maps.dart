@@ -7,74 +7,82 @@ import 'package:trabalho_rastreador/components/customTextfield.dart';
 import 'package:trabalho_rastreador/utils/toastMessages.dart';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  final List<LatLng>? initialArea;
+  final LatLng? currentLocation; // se quiser mostrar a localização atual
+  final bool readonly; // indica se é apenas visualização
+
+  const MapScreen({
+    super.key,
+    this.initialArea,
+    this.currentLocation,
+    this.readonly = false,
+  });
 
   @override
   State<MapScreen> createState() => _MapScreenState();
 }
 
 class _MapScreenState extends State<MapScreen> {
-  BitmapDescriptor markerIcon = BitmapDescriptor.defaultMarker;
-
-  LatLng initialCamera = LatLng(-23.550520, -46.633308);
-
-  //lista de coordenadas
-  List<LatLng> area = [];
   GoogleMapController? mapController;
-  bool isLoading = true;
-
+  List<LatLng> area = [];
+  LatLng initialCamera = LatLng(-23.550520, -46.633308);
   final TextEditingController locationAddressController =
       TextEditingController();
 
   @override
   void initState() {
-    _getCurrentPosition();
     super.initState();
+
+    if (widget.initialArea != null && widget.initialArea!.isNotEmpty) {
+      area = List.from(widget.initialArea!);
+      initialCamera = area[0];
+    } else if (!widget.readonly) {
+      _getCurrentPosition();
+    } else if (widget.currentLocation != null) {
+      initialCamera = widget.currentLocation!;
+    }
   }
 
   void _getCurrentPosition() async {
-    if (isLoading) {
-      LocationPermission permission = await Geolocator.checkPermission();
-      //verifica a permissão da localização e pede autorização se estiver negada
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        LocationPermission requestedPermission =
-            await Geolocator.requestPermission();
-        //verifica se não aceitou
-        if (requestedPermission == LocationPermission.denied ||
-            requestedPermission == LocationPermission.deniedForever) {
-          print('Permissões negadas');
-          return;
-        }
+        print('Permissões negadas');
+        return;
       }
+    }
 
-      Position location = await Geolocator.getCurrentPosition();
+    Position position = await Geolocator.getCurrentPosition();
+    setState(() {
+      initialCamera = LatLng(position.latitude, position.longitude);
+    });
 
+    if (mapController != null) {
+      mapController!.animateCamera(
+        CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
+      );
+    }
+  }
+
+  void _onMapTap(LatLng location) {
+    if (!widget.readonly) {
       setState(() {
-        //vai trocar a localização padrão pela atual
-        initialCamera = LatLng(location.latitude, location.longitude);
-        isLoading = false;
+        area.add(location);
       });
     }
-    //vai atualizar o mapa com a localização correta
-
-    mapController?.animateCamera(CameraUpdate.newLatLng(initialCamera));
-    
   }
 
   Future<void> _searchAddress() async {
     String address = locationAddressController.text;
-
     try {
-      //tenta converter o endereço digitado pra coordenadas
       List<Location> locations = await locationFromAddress(address);
       if (locations.isNotEmpty) {
-        //pega a primeira da lista
-        Location location = locations.first;
-
-        //move o mapa pra coordenada encontrada
+        final loc = locations.first;
         mapController?.animateCamera(
-          CameraUpdate.newLatLng(LatLng(location.latitude, location.longitude)),
+          CameraUpdate.newLatLng(LatLng(loc.latitude, loc.longitude)),
         );
       } else {
         ToastMessage().warning(message: 'Endereço não encontrado');
@@ -84,105 +92,131 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _onMapTap(LatLng location) {
-    setState(() {
-      if (area.length < 2) {
-        area.add(location);
-      } else {
-        ToastMessage().warning(message: 'Você só pode selecionar dois pontos.');
-      }
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    List<Marker> markers =
-        area.map((location) {
-          var index = area.indexOf(location);
-          //vai criar um marcador pra cada area da lista
-          return Marker(
-            markerId: MarkerId('area-$index'),
-            position: LatLng(location.latitude, location.longitude),
-            draggable: true,
-            //vai atualizar a posição do marcador
-            onDragEnd: (location) {
-              setState(() {
-                area.replaceRange(index, index + 1, [location]);
-              });
-            },
-            //tocar no marcador remove ele
-            onTap: () {
-              setState(() {
-                area.removeAt(index);
-              });
-            },
-            icon: markerIcon,
-          );
-        }).toList();
+    // Marcadores apenas se não for readonly
+    final markers =
+        !widget.readonly
+            ? area
+                .asMap()
+                .entries
+                .map(
+                  (entry) => Marker(
+                    markerId: MarkerId('marker-${entry.key}'),
+                    position: entry.value,
+                    draggable: true,
+                    onDragEnd: (newLoc) {
+                      setState(() {
+                        area[entry.key] = newLoc;
+                      });
+                    },
+                    onTap: () {
+                      setState(() {
+                        area.removeAt(entry.key);
+                      });
+                    },
+                  ),
+                )
+                .toSet()
+            : <Marker>{};
+
+    // Polígono ou círculo
+    final polygons =
+        area.length >= 3
+            ? {
+              Polygon(
+                polygonId: const PolygonId('selected-area'),
+                points: area,
+                strokeColor: Colors.blue.shade600,
+                fillColor: Colors.blue.shade200.withOpacity(0.2),
+                strokeWidth: 2,
+              ),
+            }
+            : <Polygon>{};
+
+    final circles =
+        area.length == 2
+            ? {
+              Circle(
+                circleId: const CircleId('circle-area'),
+                center: area[0],
+                radius: Geolocator.distanceBetween(
+                  area[0].latitude,
+                  area[0].longitude,
+                  area[1].latitude,
+                  area[1].longitude,
+                ),
+                strokeColor: Colors.blue.shade600,
+                fillColor: Colors.blue.shade200.withOpacity(0.2),
+                strokeWidth: 2,
+              ),
+            }
+            : <Circle>{};
+
+    // Zoom inicial
+    CameraPosition initialCameraPosition = CameraPosition(
+      target: initialCamera,
+      zoom: 14,
+    );
 
     return Scaffold(
       body: Column(
         children: [
           Expanded(
             child: GoogleMap(
-              //detectar toques no mapa
-              onTap: _onMapTap,
-              //salva o controlador do mapa em mapController
-              onMapCreated: (GoogleMapController controller) {
+              initialCameraPosition: initialCameraPosition,
+              markers: markers.union(
+                widget.readonly && widget.currentLocation != null
+                    ? {
+                      Marker(
+                        markerId: const MarkerId('current-location'),
+                        position: widget.currentLocation!,
+                        infoWindow: const InfoWindow(
+                          title: 'Localização Atual',
+                        ),
+                        icon: BitmapDescriptor.defaultMarkerWithHue(
+                          BitmapDescriptor.hueRed,
+                        ),
+                      ),
+                    }
+                    : <Marker>{},
+              ),
+              polygons: polygons,
+              circles: circles,
+              onMapCreated: (controller) {
                 mapController = controller;
               },
-              initialCameraPosition: CameraPosition(
-                target: initialCamera,
-                zoom: 14,
+              onTap: _onMapTap,
+            ),
+          ),
+          if (!widget.readonly)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 25),
+              child: Column(
+                children: [
+                  MyTextField(
+                    controller: locationAddressController,
+                    hintText: 'Endereço',
+                    obscureText: false,
+                    required: false,
+                  ),
+                  const SizedBox(height: 15),
+                  MyButton(
+                    onTap: _searchAddress,
+                    text: 'Buscar endereço',
+                    color: Color.fromARGB(255, 153, 153, 153),
+                  ),
+                  const SizedBox(height: 10),
+                  MyButton(
+                    onTap: () {
+                      Navigator.pop(context, area);
+                    },
+                    text: 'Confirmar área',
+                    color: Color.fromARGB(255, 38, 166, 154),
+                  ),
+                ],
               ),
-              markers: Set<Marker>.of(markers),
-              circles:
-                  area.length == 2
-                      ? {
-                        Circle(
-                          circleId: CircleId('circle-area'),
-                          center: area[0],
-                          radius: Geolocator.distanceBetween(
-                            area[0].latitude,
-                            area[0].longitude,
-                            area[1].latitude,
-                            area[1].longitude,
-                          ),
-                          strokeColor: Colors.blue.shade600,
-                          fillColor: Colors.blue.shade200.withOpacity(0.2),
-                          strokeWidth: 2,
-                        ),
-                      }
-                      : {},
             ),
-          ),
-          Padding(
-            padding: EdgeInsets.symmetric(vertical: 20, horizontal: 25),
-            child: Column(
-              children: [
-                MyTextField(
-                  controller: locationAddressController,
-                  hintText: 'Endereço',
-                  obscureText: false,
-                  required: false,
-                ),
-                const SizedBox(height: 15),
-                MyButton(
-                  onTap: _searchAddress,
-                  text: 'Buscar endereço',
-                  color: Colors.black,
-                ),
-                const SizedBox(height: 10),
-                MyButton(
-                  onTap: () {
-                    Navigator.pop(context, area);
-                  },
-                  text: 'Confirmar área',
-                  color: Colors.deepPurple.shade600,
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );

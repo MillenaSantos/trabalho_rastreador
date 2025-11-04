@@ -23,7 +23,7 @@ class _PatientMapState extends State<PatientMap> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Área do Paciente')),
+      appBar: AppBar(title: const Text('Área do Monitorado')),
       body: GoogleMap(
         onMapCreated: (controller) => _mapController = controller,
         initialCameraPosition: CameraPosition(
