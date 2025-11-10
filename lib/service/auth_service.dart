@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:trabalho_rastreador/models/user_model.dart';
+import 'package:trabalho_rastreador/service/emergency_listener.dart';
 
 class AuthService {
   // CADASTRO

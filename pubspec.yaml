@@ -48,6 +48,14 @@ dependencies:
   firebase_storage: ^12.4.10
   image_picker: ^1.2.0
 
+  audioplayers: ^6.1.0
+
+  # 🔔 Para mostrar notificações locais no Android
+  flutter_local_notifications: ^17.2.1
+  vibration: ^3.1.4
+
+  # 💥 Para vibração do celular
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -69,6 +77,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/sounds/alerta.mp3
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -6,6 +6,7 @@ import 'package:trabalho_rastreador/pages/login.dart';
 import 'package:trabalho_rastreador/pages/maps.dart';
 import 'package:trabalho_rastreador/pages/register_patient.dart';
 import 'package:trabalho_rastreador/service/auth_service.dart';
+import 'package:trabalho_rastreador/service/emergency_listener.dart';
 import 'package:trabalho_rastreador/service/patient_service.dart';
 import 'package:trabalho_rastreador/utils/toastMessages.dart';
 
@@ -27,7 +28,20 @@ class _HomePageState extends State<HomePage> {
     _loadUser();
   }
 
+  Future<void> initEmergencyService() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user != null) {
+      final emergencyService = EmergencyListenerService(userId: user.uid);
+      await emergencyService.init();
+      print("EmergencyListenerService inicializado para ${user.uid}");
+    } else {
+      print("Usuário não logado ainda. Serviço não iniciado.");
+    }
+  }
+
   Future<void> _loadUser() async {
+    await initEmergencyService();
     userId = await AuthService().getUserId();
     setState(() {});
   }
