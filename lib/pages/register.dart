@@ -91,6 +91,7 @@ class RegisterPage extends StatelessWidget {
                   obscureText: true,
                   required: true,
                 ),
+
                 const SizedBox(height: 10),
                 MyTextField(
                   controller: _rePasswordController,

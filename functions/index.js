@@ -1,120 +1,212 @@
+const { onValueWritten } = require("firebase-functions/v2/database");
 const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
-const { initializeApp } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
-const { getMessaging } = require("firebase-admin/messaging");
-const { getDatabase } = require("firebase-admin/database");
+admin.initializeApp();
 
-initializeApp();
-const db = getFirestore();
-const rtdb = getDatabase();
+const db = admin.firestore();
+const messaging = admin.messaging();
 
-exports.sendNotificationOnOutOfArea = onDocumentUpdated(
+
+/**
+ * RTDB → locations/{code}
+ * - Bateria: notificar quando <25 e valor mudar (sem duplicar)
+ * - Velocidade: notificar quando cruzar de <=2 → >2
+ */
+exports.onLocationUpdate = onValueWritten(
   {
-    document: "Patient/{patientId}",
-    region: "southamerica-east1"
+    ref: "locations/{code}",
+    location: "southamerica-east1", // RTDB: usar "location"
   },
   async (event) => {
-    const patientId = event.params.patientId;
-    console.log("Função disparada para patientId:", patientId);
+    const before = event.data.before.val();
+    const after = event.data.after.val();
+    if (!after) return;
 
-    const afterFirestore = event.data.after.data();
-    if (!afterFirestore) {
-      console.error("Dados do paciente ausentes no evento.");
-      return;
-    }
+    const code = event.params.code;
 
-    const status = afterFirestore.status;
-    const code = afterFirestore.code;
-    if (!code) {
-      console.error("Paciente sem code para buscar no RTDB.");
-      return;
-    }
+    const batteryBefore = before?.battery ?? null;
+    const batteryNow = after.battery ?? null;
 
-    // Buscar dados no Realtime Database
-    const snapshot = await rtdb.ref(`locations/${code}`).get();
-    const afterRealtime = snapshot.exists() ? snapshot.val() : {};
-    console.log("afterRealtime:", afterRealtime);
+    const speedBefore = before?.speed ?? null;
+    const speedNow = after.speed ?? null;
 
-    const battery = afterRealtime?.battery ?? 0;
-    const speed = afterRealtime?.speed ?? 0;
-    const latitude = afterRealtime?.latitude ?? null;
-    const longitude = afterRealtime?.longitude ?? null;
-    const isUnknown = status === "unknown";
+    //
+    // 🔋 BATERIA — Notificar se mudou E for < 25
+    //
+    if (batteryNow !== null && batteryNow < 25 && batteryNow !== batteryBefore) {
+      const patientSnap = await db.collection("Patient")
+        .where("code", "==", code)
+        .limit(1)
+        .get();
+      if (patientSnap.empty) return;
 
-    // Condições de alerta
-    const isOutOfArea = status === "outOfArea";
-    const lowBattery = battery < 25;
-    const highSpeed = speed > 2;
-    const noLocation = latitude === null || longitude === null || afterFirestore.locationAvailable === false;
+      const patientRef = patientSnap.docs[0].ref;
+      const name = patientSnap.docs[0].data().name ?? "Monitorado";
 
-    const userIds = Array.isArray(afterFirestore.userId) ? afterFirestore.userId : [];
-    if (userIds.length === 0) {
-      console.error("Nenhum userId encontrado no paciente.");
-      return;
-    }
+      // Evitar duplicação usando Firestore
+      const shouldNotify = await db.runTransaction(async (tx) => {
+        const doc = await tx.get(patientRef);
+        const last = doc.data()?.lastBatteryNotified ?? null;
 
-    console.log("status:", status);
-    console.log("battery:", battery);
-    console.log("speed:", speed);
-    console.log("latitude:", latitude, "longitude:", longitude);
-    console.log("isOutOfArea:", isOutOfArea, "lowBattery:", lowBattery, "highSpeed:", highSpeed, "noLocation:", noLocation);
+        if (last === batteryNow) return false;
 
-    for (const userId of userIds) {
-      try {
-        const notifDoc = await db.collection("users_notifications").doc(userId).get();
-        if (!notifDoc.exists) continue;
-        const token = notifDoc.data().notification_token;
-        if (!token) continue;
+        tx.update(patientRef, { lastBatteryNotified: batteryNow });
+        return true;
+      });
 
-        const alerts = [];
-        if (isOutOfArea && !noLocation && !isUnknown) {
-        alerts.push({
-          title: "⚠️ Fora da área segura",
-          body: `O monitorado ${afterFirestore.name} está fora da área segura.`
-        });
-}
-
-        if (lowBattery) alerts.push({
-          title: "⚠️ Bateria baixa",
-          body: `O monitorado ${afterFirestore.name} está com bateria baixa (${battery}%).`
-        });
-        if (highSpeed) alerts.push({
-          title: "⚠️ Alta velocidade",
-          body: `O monitorado ${afterFirestore.name} está se movendo a ${speed} km/h.`
-        });
-        if (noLocation || isUnknown) {
-          alerts.push({
-            title: "⚠️ Localização indisponível",
-            body: `Não foi possível obter a localização atual do monitorado ${afterFirestore.name}.`
-          });
-}
-
-        for (const alert of alerts) {
-          await getMessaging().send({
-            token,
-            android: { priority: "high" },
-            notification: {
-              title: alert.title,
-              body: alert.body,
-            },
-            data: { patientId, status },
-          });
-          console.log(`Notificação enviada para ${userId}: ${alert.title}`);
-        }
-      } catch (error) {
-        console.error("Erro ao enviar notificação para userId:", userId, error);
-
-        if (
-          error.code === "messaging/registration-token-not-registered" ||
-          error.code === "messaging/invalid-argument"
-        ) {
-          await db.collection("users_notifications").doc(userId).update({
-            notification_token: admin.firestore.FieldValue.delete(),
-          });
-          console.log(`Token inválido removido para userId: ${userId}`);
-        }
+      if (shouldNotify) {
+        await notify(code, "Bateria baixa", `${name} está com ${batteryNow}% de bateria.`);
       }
+    }
+
+    //
+    // 🚀 VELOCIDADE — disparar só quando cruza limite
+    //
+    if (
+      speedBefore !== null &&
+      speedNow !== null &&
+      speedBefore <= 2 &&
+      speedNow > 2
+    ) {
+      const patientSnap = await db.collection("Patient").where("code", "==", code).limit(1).get();
+      if (!patientSnap.empty) {
+        const name = patientSnap.docs[0].data().name ?? "Monitorado";
+        await notify(code, "Alta velocidade", `${name} está a ${speedNow} km/h.`);
+      }
+    }
+  }
+);
+
+
+/**
+ * 🔄 Função genérica para enviar notificações (sem duplicar)
+ * → Usa *data only* (não usa notification:) para evitar duplicidade
+ */
+async function notify(code, title, body) {
+  const patientQ = await db.collection("Patient").where("code", "==", code).limit(1).get();
+  if (patientQ.empty) return;
+
+  const patient = patientQ.docs[0].data();
+  const userIds = Array.isArray(patient.userId) ? patient.userId : [];
+  if (userIds.length === 0) return;
+
+  for (const uid of userIds) {
+    const notifDoc = await db.collection("users_notifications").doc(uid).get();
+    if (!notifDoc.exists) continue;
+
+    const token = notifDoc.data().notification_token;
+    if (!token) continue;
+
+    await messaging.send({
+      token,
+      data: {
+        tipo: "geral",
+        title,
+        body,
+      },
+      android: {
+        priority: "high",
+      },
+    });
+  }
+}
+
+
+/**
+ * Firestore → Patient/{patientId}
+ * - Fora da área / Dentro da área
+ * - Localização indisponível (locationAvailable mudou para false)
+ */
+exports.sendOutOfAreaNotification = onDocumentUpdated(
+  {
+    document: "Patient/{patientId}",
+    region: "southamerica-east1",
+  },
+  async (event) => {
+    const before = event.data.before.data();
+    const after = event.data.after.data();
+    if (!before || !after) return;
+
+    const name = after.name ?? "Monitorado";
+    const userIds = Array.isArray(after.userId) ? after.userId : [];
+    if (userIds.length === 0) return;
+
+    let title = "";
+    let body = "";
+
+    // Estado da cerca
+    if (before.status !== after.status) {
+      if (after.status === "outOfArea") {
+        title = "Fora da área segura";
+        body = `${name} saiu da área segura.`;
+      } else if (after.status === "active") {
+        title = "De volta à área segura";
+        body = `${name} voltou para a área segura.`;
+      }
+    }
+
+    // Localização indisponível
+    if (before.locationAvailable !== after.locationAvailable && after.locationAvailable === false) {
+      title = "Localização indisponível";
+      body = `Não foi possível obter a localização de ${name}.`;
+    }
+
+    if (!title) return;
+
+    for (const uid of userIds) {
+      const notifDoc = await db.collection("users_notifications").doc(uid).get();
+      if (!notifDoc.exists) continue;
+      const token = notifDoc.data().notification_token;
+      if (!token) continue;
+
+      await messaging.send({
+        token,
+        data: {
+          tipo: "geral",
+          title,
+          body,
+        },
+        android: {
+          priority: "high",
+        },
+      });
+    }
+  }
+);
+
+
+/**
+ * 🚨 Emergência — canal especial com som
+ */
+exports.sendNotificationOnEmergency = onDocumentUpdated(
+  {
+    document: "Patient/{patientId}",
+    region: "southamerica-east1",
+  },
+  async (event) => {
+    const beforeData = event.data.before.data() || {};
+    const afterData = event.data.after.data() || {};
+    if (beforeData.emergency || !afterData.emergency) return;
+
+    const patientName = afterData.name ?? "Monitorado";
+    const userIds = Array.isArray(afterData.userId) ? afterData.userId : [];
+    if (userIds.length === 0) return;
+
+    for (const uid of userIds) {
+      const doc = await db.collection("users_notifications").doc(uid).get();
+      if (!doc.exists) continue;
+      const token = doc.data().notification_token;
+      if (!token) continue;
+
+      await messaging.send({
+        token,
+        data: {
+          tipo: "emergencia",
+          title: "🚨 Emergência detectada!",
+          body: `${patientName} acionou o alerta de emergência.`,
+        },
+        android: { priority: "high" },
+      });
     }
   }
 );

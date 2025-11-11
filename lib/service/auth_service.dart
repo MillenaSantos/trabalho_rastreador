@@ -62,7 +62,7 @@ class AuthService {
       String message =
           'Ocorreu um problema! por favor tente novamente mais tarde.';
       if (e.code == 'weak-password') {
-        message = "A senha é fraca demais. Tente outra por favor!";
+        message = "A senha deve ter no mínimo 6 caracteres e deve conter letras e números. Tente outra por favor!";
       } else if (e.code == 'email-already-in-use') {
         message = "Já existe uma conta com esse email";
       } else if (e.code == 'invalid-email') {

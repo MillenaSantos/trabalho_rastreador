@@ -79,7 +79,10 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/sounds/alerta.mp3
+    - assets/images/trace.png
+
+  # assets:
+  #   - assets/sounds/alerta.ogg
 
   # To add assets to your application, add an assets section, like this:
   # assets:

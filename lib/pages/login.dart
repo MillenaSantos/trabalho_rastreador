@@ -66,6 +66,11 @@ class _LoginPageState extends State<LoginPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 25.0),
                   child: Column(
                     children: [
+                      const SizedBox(height: 100),
+                      Image.asset(
+                        'assets/images/trace.png',
+                        width: 220, // ajuste se quiser maior/menor
+                      ),
                       const SizedBox(height: 50),
                       Icon(Icons.lock, size: 100, color: mainColor),
                       const SizedBox(height: 20),

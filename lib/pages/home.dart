@@ -31,13 +31,13 @@ class _HomePageState extends State<HomePage> {
   Future<void> initEmergencyService() async {
     final user = FirebaseAuth.instance.currentUser;
 
-    if (user != null) {
-      final emergencyService = EmergencyListenerService(userId: user.uid);
-      await emergencyService.init();
-      print("EmergencyListenerService inicializado para ${user.uid}");
-    } else {
-      print("Usuário não logado ainda. Serviço não iniciado.");
-    }
+    // if (user != null) {
+    //   final emergencyService = EmergencyListenerService(userId: user.uid);
+    //   await emergencyService.init();
+    //   print("EmergencyListenerService inicializado para ${user.uid}");
+    // } else {
+    //   print("Usuário não logado ainda. Serviço não iniciado.");
+    // }
   }
 
   Future<void> _loadUser() async {
@@ -141,6 +141,7 @@ class _HomePageState extends State<HomePage> {
               itemBuilder: (context, index) {
                 final paciente = patients[index].data() as Map<String, dynamic>;
                 final codePaciente = paciente['code']?.toString();
+                final isEmergency = paciente['emergency'] ?? false;
 
                 return StreamBuilder<Map<String, dynamic>?>(
                   stream:
@@ -148,10 +149,10 @@ class _HomePageState extends State<HomePage> {
                           ? _pacienteService.getRealtimeData(codePaciente)
                           : const Stream.empty(),
                   builder: (context, realtimeSnap) {
+                    final data = realtimeSnap.data ?? {};
                     final status = paciente['status'] ?? 'indefinido';
-                    final battery = realtimeSnap.data?['battery'] ?? 0;
-                    final avgSpeed =
-                        (realtimeSnap.data?['speed'] ?? 0).toDouble();
+                    final battery = data['battery'] ?? 0;
+                    final avgSpeed = (data['speed'] ?? 0).toDouble();
 
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -172,9 +173,13 @@ class _HomePageState extends State<HomePage> {
                               ),
                             );
                           },
+
                           child: Container(
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color:
+                                  isEmergency
+                                      ? Colors.red.shade100
+                                      : Colors.white,
                               borderRadius: const BorderRadius.only(
                                 topLeft: Radius.circular(12),
                                 topRight: Radius.circular(12),
